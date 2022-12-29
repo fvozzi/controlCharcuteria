@@ -147,9 +147,11 @@ void readHumidityAndTemperature() {
       switch (chk)
      {
         case DHTLIB_OK:
-          if (notEquatFloats(currentTemperature, DHT.temperature) || notEquatFloats(currentHumidity, DHT.humidity)) {
-            currentTemperature = DHT.temperature;
-            currentHumidity = DHT.humidity;
+          int nowTemperature = DHT.temperature;
+          int nowHumidity = DHT.humidity;
+          if (notEquatFloats(currentTemperature, nowTemperature) || notEquatFloats(currentHumidity, nowHumidity)) {
+            currentTemperature = nowTemperature;
+            currentHumidity = nowHumidity;
             mustPrintTemperaturaAndState = 1;
             }
           break;
