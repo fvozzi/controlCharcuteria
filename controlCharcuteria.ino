@@ -40,7 +40,7 @@ int selectedProgram = 99;
 int indexOfPrograms = 6;
 int pins[14];
 int firstLecture = 1;
-int mustPrintTemperaturaAndState = 0;
+int mustPrintTemperaturaAndState;
 
 unsigned int lastPrintedSeconds = -1;
 String lastPrintedText;
@@ -87,6 +87,7 @@ void initializeMachineState() {
   currentProgramState = idleProgram;
   selectedProgram = 99;
   firstLecture = 1;
+  mustPrintTemperaturaAndState = 1;
   currentTemperature = 0;
   currentHumidity = 0;
 }
