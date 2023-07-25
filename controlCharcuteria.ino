@@ -10,7 +10,7 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 dht DHT;
 
 //Debug mode 1 ON
-const int debugMode = 0;
+const int debugMode = 1;
 
 //Pins map
 const int sensorDHT22Pin = 2;
@@ -22,7 +22,7 @@ const int calorPin = 7;
 const int deshumidificarPin = 8;
 const int humidificarPin = 9;
 //Constantes
-const int readingFrecuencyTime = 5000;
+const int readingFrecuencyTime = 15000;
 const int estufadoTemperatura = 24;
 const int estufadoHumedad = 94;
 const int preSecadoTemperatura = 18;
@@ -61,13 +61,14 @@ unsigned long timerMillis;
 
 void setup() {
   //Inicialize the machine
+  Serial.begin(9600);
   setupMachinePinsMode();
   setupButtons();
   initializeMachineState();
   initializePrograms();
   initializePins();
   //Restaura el programa seleccionado desde la memoria EEPROM
-  restoreProgramFromMemory();
+ restoreProgramFromMemory();
   setupLCDInitialState();
   }
 
@@ -144,12 +145,14 @@ void updateLCDState() {
   }
 
 void readHumidityAndTemperature() {
-      int chk = DHT.read22(sensorDHT22Pin);
+      int chk = DHT.read11(sensorDHT22Pin);
       switch (chk)
      {
         case DHTLIB_OK:
-          int nowTemperature = DHT.temperature;
-          int nowHumidity = DHT.humidity;
+          float nowTemperature = DHT.temperature;
+          float nowHumidity = DHT.humidity;
+          Serial.print("Temperature:");
+          Serial.println(nowTemperature);
           if (notEquatFloats(currentTemperature, nowTemperature) || notEquatFloats(currentHumidity, nowHumidity)) {
             currentTemperature = nowTemperature;
             currentHumidity = nowHumidity;
@@ -172,7 +175,11 @@ void readHumidityAndTemperature() {
   }
 
 void loop() {
-  startButton.update();  
+  //Serial.println("Loop:");
+  //Serial.println(millis());
+  startButton.update(); 
+  //Serial.println("start button") ;
+  //Serial.println(startButton.pressed()) ;
   optionButton.update();
   cancelButton.update();
   if (cancelButton.pressed()) {
@@ -213,7 +220,7 @@ void loop() {
         //Si no hay ninguna acción ejecutando deja la maquina en idle
         if ((currentMachineState == actionRunning) && (notActionRunning())) { currentMachineState = idleMachine;}
        }
-}
+  }
 }
 
 void resetMachine(){
@@ -280,10 +287,20 @@ void updateProgram(int t, int h)  {
         printTemperatureAndHumidity();
         printCurrentState();
         mustPrintTemperaturaAndState = 0;} 
+      setCursor(0,1);
+      print("Millis:");
+      print(millis(), 1);
+      Serial.print("millis() ->");
+      Serial.println(millis());
+      Serial.print("accumulatedMillis ->");
+      Serial.println(accumulatedMillis);
+       Serial.print("timerMillis ->");
+      Serial.println(timerMillis);
       //reseto el contador
       timerMillis = millis();
+      
     }  
- }
+   }
 
 void startOrShutdownActions (int program) {
   if (program>=3) {
@@ -407,9 +424,8 @@ void initOutput() {
 }
 
 void printTemperatureAndHumidity() {
-    setCursor(0,1);
-    print("Last:");
-    print(millis(), 1);
+    setCursor(0,2);
+    print("                    ");
     setCursor(0,2);
     print("T:");
     print(currentTemperature, 1);
@@ -417,7 +433,7 @@ void printTemperatureAndHumidity() {
     print("C    ");
     print("H:");
     print(currentHumidity, 1);
-    print("%  "); 
+    print("%"); 
 }
 
 boolean notEquatFloats(float float1, float float2) {
