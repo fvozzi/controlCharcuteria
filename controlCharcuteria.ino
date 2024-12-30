@@ -1,18 +1,21 @@
-//#include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <Bounce2.h>
 #include <dht.h>
 #include <EEPROM.h>
+#include <avr/wdt.h> // Librería para el Watchdog Timer
 
 LiquidCrystal_I2C lcd(0x27, 20, 4); 
-//DHT dht(2, DHT22);
-
 dht DHT;
 
-//Debug mode 1 ON
-const int debugMode = 1;
+// Debug mode 1 ON
+const int debugMode = 0;
 
-//Pins map
+// Info de Debuging
+const int EEPROM_ADDRESS_MACHINE_STATE = 0; // Estado de la máquina de estados
+const int EEPROM_ADDRESS_LAST_STATE = 1; // Dirección para el último estado registrado
+const int EEPROM_ADDRESS_CRASH_COUNT = 2; // Dirección para el contador de cuelgues
+
+// Pins map
 const int sensorDHT22Pin = 2;
 const int startButtonPin = 3;
 const int optionButtonPin = 4;
@@ -21,7 +24,7 @@ const int frioPin = 6;
 const int calorPin = 7;
 const int deshumidificarPin = 8;
 const int humidificarPin = 9;
-//Constantes
+// Constantes
 const int readingFrecuencyTime = 15000;
 const int estufadoTemperatura = 24;
 const int estufadoHumedad = 94;
@@ -60,6 +63,10 @@ enum charcuteriaProgramStates currentProgramState;
 unsigned long timerMillis;
 
 void setup() {
+  // Incrementar el contador de cuelgues
+  incrementCrashCount();
+  // Inicializar el WDT
+  wdt_enable(WDTO_2S);
   //Inicialize the machine
   Serial.begin(9600);
   setupMachinePinsMode();
@@ -68,7 +75,7 @@ void setup() {
   initializePrograms();
   initializePins();
   //Restaura el programa seleccionado desde la memoria EEPROM
- restoreProgramFromMemory();
+  restoreProgramFromMemory();
   setupLCDInitialState();
   }
 
@@ -111,11 +118,11 @@ void setupLCDInitialState() {
   setCursor(0, 0); 
   print("Chachi Charcuteria");
   updateLCDState();
-  setCursor(0, 1);
   }
 
 void updateLCDState() {
   if (selectedProgram==99) {
+    displayCrashInfo();
     setCursor(0, 2);
     print("                   ");
     setCursor(0, 2);
@@ -127,6 +134,7 @@ void updateLCDState() {
    }
   else {
     lcd.clear();
+    displayCrashInfo();
     setCursor(0, 0);
     print("                    ");
     setCursor(0, 0);
@@ -142,11 +150,17 @@ void updateLCDState() {
       setCursor(0,3);
       print("iniciar!");}
   }
+
   }
 
 void readHumidityAndTemperature() {
-      int chk = DHT.read11(sensorDHT22Pin);
-      switch (chk)
+    // Registrar el estado actual en la EEPROM
+    saveCriticalState(1); // Código 1: lectura de DHT
+    // Reinicia el Watchdog antes de leer los datos del sensor
+    wdt_reset(); 
+
+    int chk = DHT.read22(sensorDHT22Pin);
+    switch (chk)
      {
         case DHTLIB_OK:
           float nowTemperature = DHT.temperature;
@@ -175,11 +189,8 @@ void readHumidityAndTemperature() {
   }
 
 void loop() {
-  //Serial.println("Loop:");
-  //Serial.println(millis());
+  wdt_reset(); // Reinicia el Watchdog Timer al inicio de cada iteración
   startButton.update(); 
-  //Serial.println("start button") ;
-  //Serial.println(startButton.pressed()) ;
   optionButton.update();
   cancelButton.update();
   if (cancelButton.pressed()) {
@@ -226,7 +237,9 @@ void loop() {
 void resetMachine(){
   initializeMachineState();
   //Guardo el código del cancelar en la memoria EEPROM
-  EEPROM.update(0, 99); 
+  saveMachineState(99);
+  saveCriticalState(0);
+  resetCrashCount();
   setupLCDInitialState();
   }
 
@@ -270,35 +283,33 @@ void updateProgram(int t, int h)  {
       //Prendo el frio si la temperatura supero la temp del programa + el deltaT
       if ((currentTemperature-t) >= deltaT) { digitalWrite(frioPin, LOW);}
       //Apago el frio si la temperatura es igual o inferior la temp del programa
-      if ((currentTemperature) <= t) {digitalWrite(frioPin, HIGH);}
+      if ((currentTemperature) <= t) {
+        digitalWrite(frioPin, HIGH);
+        saveCriticalState(2);}
       //Prendo el calor si la temperatura es inferior la temp del programa - el deltaT
       if ((t-currentTemperature) >= deltaT) {digitalWrite(calorPin, LOW);}
       //Apago el calor si la temperatura es igual o superior la temp del programa
-      if ((currentTemperature) >= t) {digitalWrite(calorPin, HIGH);}
+      if ((currentTemperature) >= t) {
+        digitalWrite(calorPin, HIGH);
+        saveCriticalState(3);}
       //Prendo el deshumifificador (cooler) si la humedad supero la temp del programa + el deltaT
       if ((currentHumidity-h) >= deltaH) {digitalWrite(deshumidificarPin, LOW);}
       //Apago el deshumifificador si la temperatura es igual o inferior la temp del programa
-      if ((currentHumidity) <= h) {digitalWrite(deshumidificarPin, HIGH);}
+      if ((currentHumidity) <= h) {
+        digitalWrite(deshumidificarPin, HIGH);
+        saveCriticalState(4);}
       //Prendo el huidificar si la humedad es inferior la temp del programa - el deltaT
       if ((h-currentHumidity) >= deltaH) {digitalWrite(humidificarPin, LOW);}
       //Apago el calor si la temperatura es igual o superior la temp del programa
-      if ((currentHumidity) >= h) {digitalWrite(humidificarPin, HIGH);}
+      if ((currentHumidity) >= h) {
+        digitalWrite(humidificarPin, HIGH);
+        saveCriticalState(5);}
       if (mustPrintTemperaturaAndState==1) {
         printTemperatureAndHumidity();
         printCurrentState();
         mustPrintTemperaturaAndState = 0;} 
-      setCursor(0,1);
-      print("Millis:");
-      print(millis(), 1);
-      Serial.print("millis() ->");
-      Serial.println(millis());
-      Serial.print("accumulatedMillis ->");
-      Serial.println(accumulatedMillis);
-       Serial.print("timerMillis ->");
-      Serial.println(timerMillis);
       //reseto el contador
       timerMillis = millis();
-      
     }  
    }
 
@@ -324,8 +335,8 @@ void initializePrograms() {
   programs[0] = "Estuf.(" + String(estufadoTemperatura) + String(char(223)) + "C/" + String(estufadoHumedad)+ "%H)";
   programs[1] = "PreSe.(" + String(preSecadoTemperatura) + String(char(223)) + "C/" + String(preSecadoHumedad)+ "%H)";
   programs[2] = "Secado(" + String(secadoTemperatura) + String(char(223)) + "C/" + String(secadoHumedad)+ "%H)";
-  programs[3] = "Calor";
-  programs[4] = "Frio";
+  programs[3] = "Frio";
+  programs[4] = "Calor";
   programs[5] = "Deshumidificar";
   programs[6] = "Humidificar";
   }
@@ -348,16 +359,15 @@ void printCurrentState() {
   print("C=");
   printStateOf(calorPin, 7, 3);
   setCursor(10,3);  
-  print("H=");
-  printStateOf(humidificarPin, 12, 3);
-  setCursor(15,3);  
   print("D=");
-  printStateOf(deshumidificarPin, 17, 3);
+  printStateOf(deshumidificarPin, 12, 3);
+  setCursor(15,3);  
+  print("H=");
+  printStateOf(humidificarPin, 17, 3);
   }
 
 void restoreProgramFromMemory() {
-  Serial.println(millis());
-  selectedProgram = EEPROM.read(0); 
+  selectedProgram = EEPROM.read(EEPROM_ADDRESS_MACHINE_STATE); 
   if (selectedProgram!=99) {
     startProgram();
   }
@@ -367,7 +377,7 @@ void startProgram() {
   timerMillis = millis(); //reset timer
   updateStateOnSelectedProgram();
   //Guardo el programa seleccionado en la memoria EEPROM
-  EEPROM.update(0, selectedProgram);
+  saveMachineState(selectedProgram);
   }
 
   #ifdef __arm__
@@ -424,15 +434,21 @@ void initOutput() {
 }
 
 void printTemperatureAndHumidity() {
+    // Creamos un buffer para almacenar el número formateado
+    char strTemperature[4];
+    char strHumidity[4];
+    dtostrf(currentTemperature, 4, 1, strTemperature); 
     setCursor(0,2);
     print("                    ");
     setCursor(0,2);
     print("T:");
-    print(currentTemperature, 1);
+    print(strTemperature);
     print(String(char(223)));
-    print("C    ");
+    print("C");
+    dtostrf(currentHumidity, 4, 1, strHumidity); 
+    setCursor(13,2);
     print("H:");
-    print(currentHumidity, 1);
+    print(strHumidity);
     print("%"); 
 }
 
@@ -440,4 +456,52 @@ boolean notEquatFloats(float float1, float float2) {
   //return ( (int)(float1 *10)) != ((int)(float2 * 10));
   return (round(float1) != round(float2));
 
+}
+
+void displayCrashInfo() {
+    int crashCount = EEPROM.read(EEPROM_ADDRESS_CRASH_COUNT);
+    int lastState = EEPROM.read(EEPROM_ADDRESS_LAST_STATE);
+    lcd.setCursor(0, 1);
+    lcd.print("R: ");
+    lcd.print(crashCount);
+
+    lcd.setCursor(6, 1);
+    lcd.print("E: ");
+    switch (lastState) {
+        case 1:
+            lcd.print("Sensor DHT");
+            break;
+        case 2:
+            lcd.print("Frio ON");
+            break;
+        case 3:
+            lcd.print("Calor ON");
+            break;
+        case 4:
+            lcd.print("Humedad ON");
+            break;
+        case 5:
+            lcd.print("Deshumi ON");
+            break;
+        default:
+            lcd.print("Desconocido");
+            break;
+    }
+}
+
+void saveMachineState(int state) {
+    EEPROM.update(EEPROM_ADDRESS_MACHINE_STATE, state);
+}
+
+void incrementCrashCount() {
+    int crashCount = EEPROM.read(EEPROM_ADDRESS_CRASH_COUNT);
+    EEPROM.write(EEPROM_ADDRESS_CRASH_COUNT, crashCount + 1); // Aquí puedes usar write porque sí o sí queremos actualizar.
+}
+
+void resetCrashCount() {
+    EEPROM.write(EEPROM_ADDRESS_CRASH_COUNT, 0); 
+}
+
+void saveCriticalState(int state) {
+    EEPROM.update(EEPROM_ADDRESS_LAST_STATE, state);
 }
