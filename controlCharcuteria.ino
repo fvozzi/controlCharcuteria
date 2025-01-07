@@ -26,6 +26,7 @@ const int deshumidificarPin = 8;
 const int humidificarPin = 9;
 // Constantes
 const int readingFrecuencyTime = 15000;
+const long resetLCDFrecuencyTime = 60000;
 const int estufadoTemperatura = 24;
 const int estufadoHumedad = 94;
 const int preSecadoTemperatura = 18;
@@ -59,8 +60,10 @@ enum machineStates currentMachineState;
 enum charcuteriaProgramStates currentProgramState;
 
 #define accumulatedMillis millis() - timerMillis
+#define accumulatedMillis2 millis() - timerMillis2
 
 unsigned long timerMillis;
+unsigned long timerMillis2;
 
 void setup() {
   // Incrementar el contador de cuelgues
@@ -165,8 +168,6 @@ void readHumidityAndTemperature() {
         case DHTLIB_OK:
           float nowTemperature = DHT.temperature;
           float nowHumidity = DHT.humidity;
-          Serial.print("Temperature:");
-          Serial.println(nowTemperature);
           if (notEquatFloats(currentTemperature, nowTemperature) || notEquatFloats(currentHumidity, nowHumidity)) {
             currentTemperature = nowTemperature;
             currentHumidity = nowHumidity;
@@ -203,12 +204,15 @@ void loop() {
         }
         break;
     case estufado:
+        //if (startButton.pressed()) {resetLCDState();};
         updateProgram(estufadoTemperatura, estufadoHumedad);
         break;
     case preSecado:
-         updateProgram(preSecadoTemperatura, preSecadoHumedad);
+        //if (startButton.pressed()) {resetLCDState();};
+        updateProgram(preSecadoTemperatura, preSecadoHumedad);
         break;
     case secado:
+        //if (startButton.pressed()) {resetLCDState();};
         updateProgram(secadoTemperatura, secadoHumedad);
         break;
     case actionRunning:
@@ -305,6 +309,11 @@ void updateProgram(int t, int h)  {
         digitalWrite(humidificarPin, HIGH);
         saveCriticalState(5);}
       if (mustPrintTemperaturaAndState==1) {
+        //Cada cierta frecuencia reseteo la pantalla
+        if (accumulatedMillis2 >= resetLCDFrecuencyTime) {
+          initOutput();
+          updateLCDState();
+          timerMillis2 = millis();};
         printTemperatureAndHumidity();
         printCurrentState();
         mustPrintTemperaturaAndState = 0;} 
@@ -375,6 +384,7 @@ void restoreProgramFromMemory() {
 
 void startProgram() {
   timerMillis = millis(); //reset timer
+  timerMillis2 = millis(); //reset timer
   updateStateOnSelectedProgram();
   //Guardo el programa seleccionado en la memoria EEPROM
   saveMachineState(selectedProgram);
@@ -427,10 +437,13 @@ void print(long longToPrint, int decimal) {
 }
 
 void initOutput() {
-   if (debugMode==0) {
+  if (debugMode==0) {
     lcd.init();
-    lcd.backlight(); }
-  else {Serial.begin(9600);}
+    lcd.backlight(); 
+    }
+  else {
+    Serial.begin(9600);
+    }
 }
 
 void printTemperatureAndHumidity() {
@@ -505,3 +518,4 @@ void resetCrashCount() {
 void saveCriticalState(int state) {
     EEPROM.update(EEPROM_ADDRESS_LAST_STATE, state);
 }
+
